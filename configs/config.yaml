@@ -1,7 +1,8 @@
 PRODUCTION: true
+PORT: "8080"
 ## Redis configuration
 REDIS_URL: "localhost:6379"
 REDIS_PASSWORD: "password"
 
 ## MySQL configuration
-MYSQL_URI: "user:pass@tcp(127.0.0.1:3306)/dbname?charset=utf8mb4&parseTime=True&loc=Local"
+MYSQL_URI: "root:@tcp(localhost:3306)/go_practice?charset=utf8mb4&parseTime=True&loc=Local"

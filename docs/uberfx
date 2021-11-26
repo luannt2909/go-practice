@@ -1,0 +1,166 @@
+## Induction:
+Hi everyone, this is my first post. I'm golang developer currently,
+and today I will show you how to apply [uber-go/fx](https://github.com/uber-go/fx) as dependency injection (DI) with Golang.
+
+First at all, Let's find out what `Dependency Injection` is?
+
+## What is Dependency injection?
+As you know, we have many ways to define an object or structure with many dependencies, such as:
+
+```go
+type Router interface {
+    Register(gGroup gin.IRouter)
+}
+type router struct {
+    ctrl Controller
+}
+```
+
+Great, `Router` can be created as follows:
+
+First way:
+```go
+func NewRouter() Router {
+    return &router{ctrl: NewController()}
+}
+```
+
+Second way:
+```go
+func NewRouter(ctrl Controller) Router {
+    return &router{ctrl: ctrl}
+}
+```
+
+---
+Let's see the block code above. Both is correct, but I recommend second way to create an object.
+It's make easier to write unit test or integration test for our code, and we will have another post about this topic.
+
+With second way approach, `Controller` is injected to `router`, and `router` will not care how `Controller` is created.
+It's dependency injection.
+
+Dependency Injection is passing a dependency to another object or structure, function. We do this as it allows the creation
+of dependencies outside the dependant object. This is useful as we can decouple dependency creation from the
+object being created.
+
+According to [uber-go/fx](https://github.com/uber-go/fx), It helps us:
+
+- Makes dependency injection easy.
+- Eliminates the need for global state and func init().
+
+## How to use uber-go/fx:
+There are 2 concepts in uber-go/fx that we have to understand:
+### 1. fx.Provide: 
+`fx.Provide`: provide an object or return error if we want to register with fx about some object. 
+Simple way providing an object as follows:
+```go
+var Module = fx.Provide(provideGinEngine)
+
+func provideGinEngine() *gin.Engine {
+	return gin.Default()
+}
+```
+In order way, We can return an object and error, if `error` is occurs, framework will show it us:
+```go
+var Module = fx.Provide(provideGormDB)
+func provideGormDB() (*gorm.DB, error) {
+	uri := viper.GetString("MYSQL_URI")
+	return gorm.Open(mysql.Open(uri))
+}
+```
+We also return 
+```go
+var Module = fx.Provide(provideGormDB)
+func provideGormDB() (*gorm.DB, error) {
+	uri := viper.GetString("MYSQL_URI")
+	return gorm.Open(mysql.Open(uri))
+}
+```
+The last way, uber-go/fx has supported as add hooks `onStart` and `onStop` when we provide an object:
+```go
+var Module = fx.Provide(provideMongoDBClient)
+
+const defaultTimeout = 10 * time.Second
+
+func provideMongoDBClient(lifecycle fx.Lifecycle) (*mongo.Client, error) {
+	mongoDBURI := viper.GetString(env.MongoURI)
+	client, err := db.GetDBConnection(mongoDBURI)
+	if err != nil {
+		return nil, err
+	}
+	lifecycle.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+			defer cancel()
+			return client.Connect(ctx)
+		},
+		OnStop: func(ctx context.Context) error {
+			return client.Disconnect(ctx)
+		},
+	})
+	return client, nil
+}
+```
+
+### 2. fx.Invoke:  
+
+`fx.Invoke`: registers functions that are executed eagerly on application start. Arguments for these invocations are built using the constructors registered by Provide
+
+With fx.Invoke, I used as initialize or execute a functions, such as: init logger, register server, ... Ex:
+```go
+var Initialize = fx.Invoke(readConfig)
+func readConfig() {
+		replacer := strings.NewReplacer(".", "_")
+		viper.SetEnvKeyReplacer(replacer)
+		viper.AutomaticEnv()
+
+		viper.SetConfigFile("config.yaml")
+		viper.AddConfigPath(".")
+
+		err := viper.ReadInConfig()
+		if err != nil {
+			panic(err)
+		}
+}
+```
+If you want to pass arguments from somewhere, It maybe:
+```go
+func Initialize(configFile, configPath string) fx.Option {
+	return fx.Invoke(func() {
+		viper.SetConfigFile(configFile)
+		viper.AddConfigPath(configPath)
+		viper.AddConfigPath(".")
+		...
+	})
+}
+```
+Another way, you can use `fx.lifecycle` to add hooks when server start or stop
+```go
+func startServer(ginEngine *gin.Engine, lifecycle fx.Lifecycle) {
+	port := viper.GetString("PORT")
+	server := http.Server{
+		Addr:    ":" + port,
+		Handler: ginEngine,
+	}
+	ginEngine.GET("/ping", func(c *gin.Context) {
+		c.String(http.StatusOK, "pong")
+	})
+	lifecycle.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			fmt.Println("run on port:", port)
+			go func() {
+				if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					fmt.Errorf("failed to listen and serve from server: %v", err)
+				}
+			}()
+			return nil
+		},
+		OnStop: func(ctx context.Context) error {
+			return server.Shutdown(ctx)
+		},
+	})
+}
+```
+
+fx will use one to inject anywhere that you want and use it as follows:
+````

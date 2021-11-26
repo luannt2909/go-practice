@@ -15,9 +15,14 @@ func Initialize(configFile, configPath string) fx.Option {
 
 		// viper.SetConfigName(configFile)
 		viper.SetConfigFile(configFile)
+		viper.SetConfigName(configFile)
+		viper.SetConfigType("yaml")
 		viper.AddConfigPath(configPath)
 		viper.AddConfigPath(".")
 
-		_ = viper.ReadInConfig()
+		err := viper.ReadInConfig()
+		if err != nil {
+			panic(err)
+		}
 	})
 }

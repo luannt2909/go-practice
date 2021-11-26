@@ -4,6 +4,7 @@ import (
 	"github.com/spf13/viper"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+
 )
 
 func provideGormDB() (*gorm.DB, error) {
